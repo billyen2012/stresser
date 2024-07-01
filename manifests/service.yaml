@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: modernmta-dev
+  name: ${CI_ENVIRONMENT_SLUG}-app
+  labels:
+    app.kubernetes.io/name: ${PROJECT_NAME}
+    app.kubernetes.io/component: app
+    app.kubernetes.io/instance: ${CI_ENVIRONMENT_SLUG}
+spec:
+  selector:
+    app.kubernetes.io/name: ${PROJECT_NAME}
+    app.kubernetes.io/component: app
+    app.kubernetes.io/instance: ${CI_ENVIRONMENT_SLUG}
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: modernmta-dev
+  name: ${CI_ENVIRONMENT_SLUG}-postgres
+  labels:
+    app.kubernetes.io/name: ${PROJECT_NAME}
+    app.kubernetes.io/component: postgres
+    app.kubernetes.io/instance: ${CI_ENVIRONMENT_SLUG}
+spec:
+  selector:
+    app.kubernetes.io/name: ${PROJECT_NAME}
+    app.kubernetes.io/component: postgres
+    app.kubernetes.io/instance: ${CI_ENVIRONMENT_SLUG}
+  ports:
+    - port: 5432
+      protocol: TCP
+      targetPort: postgres

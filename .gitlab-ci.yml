@@ -1,0 +1,133 @@
+variables:
+  PROJECT_NAME: "modernmta"
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_HOST: tcp://docker:2375/
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+  YARN_CACHE_FOLDER: "$CI_PROJECT_DIR/.yarn"
+  NEXT_TELEMETRY_DISABLED: 1
+  PRODUCTION_CI_ENV_SLUG_NAME: stress-it-pro
+  # app env
+  POSTGRES_DB: $POSTGRES_DB
+  POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+  POSTGRES_HOST: $POSTGRES_HOST
+  AUTH_SECRET: $AUTH_SECRET
+  APP_SECRET: $APP_SECRET
+  GOOGLE_CLIENT_ID: $GOOGLE_CLIENT_ID
+  GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET
+  DATABASE_URL: postgres://postgres:$POSTGRES_PASSWORD@$CI_ENVIRONMENT_SLUG-postgres:5432/$POSTGRES_DB
+  # gitlab env
+  CI_REGISTRY_IMAGE: $CI_REGISTRY_IMAGE
+
+.package-version: &package-version
+  - export PACKAGE_VERSION=$(cat package.json | grep version | head -1 | awk -F= "{ print $2 }" | sed 's/[version:,\",]//g' | tr -d '[[:space:]]')
+
+.login-docker: &login-docker
+  - sleep 10
+  - apk add nmap
+  - nmap -sT -p- docker
+  - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+
+.image-build-push: &image-build-push
+  - echo "image tag name $IMAGE_TAG"
+  - docker build -t $CI_REGISTRY_IMAGE:$IMAGE_TAG --build-arg="K6_NAME=$K6_NAME" .
+  - docker push $CI_REGISTRY_IMAGE:$IMAGE_TAG
+
+.k8s-context: &k8s-context # app env
+  - kubectl config get-contexts
+  - kubectl config use-context mmta/stress-it:mmta-dev
+
+.apply-manifest: &apply-manifest # app env
+  - apt-get update
+  - apt-get install -y gettext-base
+  - envsubst < manifests/$TARGET_FILE > $TARGET_FILE
+  - kubectl apply -f $TARGET_FILE
+
+# Global CI Settings
+image: node:18.15.0
+
+stages:
+  - make
+  - deploy
+cache:
+  paths:
+    - .npm
+    - .yarn
+    - .next/cache/
+
+# build production image
+make:production-registry:
+  stage: make
+  interruptible: true
+  image: docker:stable
+  services:
+    - name: docker:dind
+      command: ["--mtu=1300"]
+  script:
+    - *package-version
+    - export IMAGE_TAG="$PACKAGE_VERSION"
+    - *login-docker
+    - >
+      if docker pull $CI_REGISTRY_IMAGE:$IMAGE_TAG; then
+        echo "Image already exists locally. Skipping build."
+        exit 0
+      else
+        echo "Image does not exist locally. Proceeding with the build."
+      fi
+    - *image-build-push
+  only:
+    - main
+
+deploy:ingress-production:
+  stage: deploy
+  interruptible: true
+  image:
+    name: google/cloud-sdk:latest
+    entrypoint: [""]
+  variables:
+    DOMAIN_PREFIX: stress-it
+    TARGET_FILE: ingress.yaml
+  environment:
+    name: $PRODUCTION_CI_ENV_SLUG_NAME
+    url: https://$DOMAIN_PREFIX.lakehouse.digital
+  script:
+    - *k8s-context
+    - *apply-manifest
+  only:
+    - main
+
+deploy:service-production:
+  stage: deploy
+  interruptible: true
+  image:
+    name: google/cloud-sdk:latest
+    entrypoint: [""]
+  variables:
+    TARGET_FILE: service.yaml
+  environment:
+    name: $PRODUCTION_CI_ENV_SLUG_NAME
+  script:
+    - *k8s-context
+    - *apply-manifest
+  only:
+    - main
+
+deploy:deployment-production:
+  stage: deploy
+  interruptible: true
+  image:
+    name: google/cloud-sdk:latest
+    entrypoint: [""]
+  variables:
+    TARGET_FILE: deployment.yaml
+    NEXTAUTH_URL: https://stress-it.lakehouse.digital
+    # override production DATABASE_URL base on user env var
+    DATABASE_URL: postgres://postgres:$POSTGRES_PASSWORD@$POSTGRES_HOST:5432/$POSTGRES_DB
+  environment:
+    name: $PRODUCTION_CI_ENV_SLUG_NAME
+  script:
+    - *package-version
+    - export IMAGE_TAG="$PACKAGE_VERSION"
+    - *k8s-context
+    - *apply-manifest
+  only:
+    - main

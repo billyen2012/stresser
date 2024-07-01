@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: modernmta-dev
+  name: ${CI_ENVIRONMENT_SLUG}-stress-it
+  labels:
+    app.kubernetes.io/name: ${PROJECT_NAME}
+    app.kubernetes.io/instance: ${CI_ENVIRONMENT_SLUG}
+spec:
+  rules:
+    - host: ${DOMAIN_PREFIX}.lakehouse.digital
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${CI_ENVIRONMENT_SLUG}-app
+                port:
+                  number: 80

@@ -1,0 +1,112 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model User {
+  id                     String                @id @default(uuid())
+  name                   String?
+  email                  String?               @unique
+  emailVerified          DateTime?             @db.Timestamptz(3)
+  image                  String?
+  emailHash              String?               @unique
+  isAdmin                Boolean               @default(false)
+  isSuspended            Boolean               @default(false)
+  isLinkedToOAuthAccount Boolean               @default(false)
+  password               String?
+  accounts               Account[]
+  sessions               Session[]
+  scripts                Script[]
+  scriptRunningResults   ScriptRunningResult[]
+  createdAt              DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime              @updatedAt @db.Timestamptz(3)
+}
+
+model Script {
+  id             String                @id @default(uuid())
+  userId         String
+  name           String                @db.Text
+  script         String                @db.Text
+  isPublic       Boolean               @default(false)
+  user           User                  @relation(fields: [userId], references: [id])
+  runningResults ScriptRunningResult[]
+  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
+}
+
+model ScriptRunningResult {
+  id             String              @id @default(uuid())
+  userId         String
+  scriptClone    String              @db.Text
+  isFinished     Boolean             @default(false)
+  data           ScriptRunningData[]
+  isManuallyStop Boolean             @default(false)
+  isErroneous    Boolean             @default(false)
+  errorMessage   String              @default("") @db.Text
+  user           User                @relation(fields: [userId], references: [id])
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime            @updatedAt @db.Timestamptz(3)
+  Script         Script?             @relation(fields: [scriptId], references: [id])
+  scriptId       String?
+}
+
+model ScriptRunningData {
+  id                    String               @id @default(uuid())
+  ScriptRunningResult   ScriptRunningResult? @relation(fields: [scriptRunningResultId], references: [id])
+  scriptRunningResultId String?
+  data                  Json                 @db.JsonB
+}
+
+model WhitelistEmail {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model WhitelistDomain {
+  id        String   @id @default(uuid())
+  domain    String   @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
